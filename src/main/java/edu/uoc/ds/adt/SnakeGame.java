@@ -2,22 +2,28 @@ package edu.uoc.ds.adt;
 
 import edu.uoc.ds.adt.exceptions.SnakeOutOfBoundsException;
 import edu.uoc.ds.adt.model.Snake;
+import edu.uoc.ds.adt.sequential.QueueArrayImpl;
 import edu.uoc.ds.traversal.Iterator;
-import edu.uoc.ds.exceptions.InvalidPositionException;
 
-import java.util.ArrayList;
-import java.util.List;
+import java.util.Arrays;
 import java.util.Objects;
 
 public class SnakeGame implements ISnakeGame {
     private final Snake snake = new Snake();
-    private final boolean[][] food = new boolean[BOARD_SIZE][BOARD_SIZE];
-    private final List<LogEntry> log = new ArrayList<>();
+    private final char[][] board = new char[BOARD_SIZE][BOARD_SIZE];
+    private final QueueArrayImpl<LogEntry> log = new QueueArrayImpl<>(MAX_LOG_SIZE);
+
+    public SnakeGame() {
+        for (char[] row : board) {
+            Arrays.fill(row, '.');
+        }
+    }
 
     @Override
     public void addSegment(int x, int y) {
         requireOnBoard(x, y);
         snake.addSegment(x, y);
+        board[y][x] = 'S';
     }
 
     @Override
@@ -39,23 +45,20 @@ public class SnakeGame implements ISnakeGame {
     @Override
     public void addFood(int x, int y) {
         requireOnBoard(x, y);
-        food[x][y] = true;
+        board[y][x] = '@';
     }
 
     @Override
     public boolean hasFoodAt(int x, int y) {
-        return isOnBoard(x, y) && food[x][y];
+        return isOnBoard(x, y) && board[y][x] == '@';
     }
 
     @Override
     public char getSegment(int x, int y) {
         if (!isOnBoard(x, y)) {
-            return ' ';
+            return '.';
         }
-        if (snake.contains(x, y)) {
-            return 'S';
-        }
-        return food[x][y] ? '@' : ' ';
+        return board[y][x];
     }
 
     @Override
@@ -83,41 +86,36 @@ public class SnakeGame implements ISnakeGame {
             throw new SnakeOutOfBoundsException();
         }
 
-        boolean eats = food[nextX][nextY];
+        boolean eats = hasFoodAt(nextX, nextY);
+        Segment currentTail = snake.tail();
+        boolean movingIntoVacatingTail = !eats
+                && currentTail.getX() == nextX
+                && currentTail.getY() == nextY;
+        if (snake.contains(nextX, nextY) && !movingIntoVacatingTail) {
+            appendLog(currentHead.getX(), currentHead.getY(), direction, "COLLISION");
+            throw new SnakeOutOfBoundsException();
+        }
+
         appendLog(currentHead.getX(), currentHead.getY(), direction, eats ? "EAT" : "MOVE");
         if (eats) {
-            food[nextX][nextY] = false;
+            board[nextY][nextX] = '.';
             appendLog(currentHead.getX(), currentHead.getY(), direction, "MOVE");
         } else {
-            snake.deleteTail();
+            Segment removedTail = snake.deleteTail();
+            board[removedTail.getY()][removedTail.getX()] = '.';
         }
         snake.addHead(new Segment(nextX, nextY));
+        board[nextY][nextX] = 'S';
     }
 
     @Override
     public Iterator<LogEntry> logEntries() {
-        List<LogEntry> snapshot = new ArrayList<>(log);
-        return new Iterator<LogEntry>() {
-            private int index;
-
-            @Override
-            public boolean hasNext() {
-                return index < snapshot.size();
-            }
-
-            @Override
-            public LogEntry next() throws InvalidPositionException {
-                if (!hasNext()) {
-                    throw new InvalidPositionException("No more log entries.");
-                }
-                return snapshot.get(index++);
-            }
-        };
+        return log.values();
     }
 
     private void appendLog(int x, int y, Direction direction, String message) {
-        if (log.size() == MAX_LOG_SIZE) {
-            log.remove(0);
+        if (log.isFull()) {
+            log.poll();
         }
         log.add(new LogEntry(x, y, direction, message));
     }
@@ -134,15 +132,15 @@ public class SnakeGame implements ISnakeGame {
 
     @Override
     public String toString() {
-        StringBuilder board = new StringBuilder();
+        StringBuilder display = new StringBuilder();
         for (int y = 0; y < BOARD_SIZE; y++) {
             for (int x = 0; x < BOARD_SIZE; x++) {
-                board.append(getSegment(x, y));
+                display.append(board[y][x]);
             }
             if (y + 1 < BOARD_SIZE) {
-                board.append(System.lineSeparator());
+                display.append(System.lineSeparator());
             }
         }
-        return board.toString();
+        return display.toString();
     }
 }
